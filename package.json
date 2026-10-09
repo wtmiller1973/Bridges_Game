@@ -1,0 +1,19 @@
+{
+  "name": "the-bridges",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A free, browser-based teaching game that simulates the automated drawbridge from the CIS610 'The Bridges' case.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}

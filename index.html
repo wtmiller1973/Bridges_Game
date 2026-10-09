@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Bridges</title>
+  <meta name="description" content="A free browser game that teaches software requirements by running an automated drawbridge." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f6feb'/%3E%3Cpath d='M3 20h26M7 20v-7h18v7' stroke='white' stroke-width='3' fill='none'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="top">
+    <h1>The Bridges</h1>
+    <label class="sr">Level <select id="levelSel"></select></label>
+    <div class="seg" role="group" aria-label="Control mode">
+      <button id="modeAuto" class="on">Automatic</button><button id="modeManual">Manual</button>
+    </div>
+    <button id="playBtn" aria-label="Pause or resume">Pause</button>
+    <label>Speed
+      <select id="speedSel"><option value="1">1x</option><option value="2">2x</option><option value="4">4x</option><option value="8">8x</option></select>
+    </label>
+    <button id="restartBtn">Restart</button>
+    <span class="grow"></span>
+    <button id="bizBtn">Business case</button>
+    <button id="shareBtn">Copy share link</button>
+    <button id="helpBtn" aria-label="Help">?</button>
+  </header>
+  <main class="layout">
+    <section class="stage">
+      <canvas id="scene" width="800" height="600" aria-label="Bridge simulation"></canvas>
+      <div class="hud" id="hud"></div>
+      <canvas id="timeline" width="800" height="110" aria-label="Siren and bridge timing diagram"></canvas>
+    </section>
+    <aside class="panel">
+      <nav class="tabs" role="tablist">
+        <button data-tab="op" class="on" role="tab">Operator</button>
+        <button data-tab="trace" role="tab">Trace</button>
+        <button data-tab="dot" role="tab">DOT reports</button>
+        <button data-tab="specs" role="tab">Spec Lab</button>
+      </nav>
+      <div id="tab-op" class="tabbody"></div>
+      <div id="tab-trace" class="tabbody" hidden></div>
+      <div id="tab-dot" class="tabbody" hidden></div>
+      <div id="tab-specs" class="tabbody" hidden></div>
+    </aside>
+  </main>
+  <dialog id="dlg"><div id="dlgBody"></div></dialog>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
