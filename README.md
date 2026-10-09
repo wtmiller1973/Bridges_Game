@@ -36,11 +36,12 @@ No server, no accounts, no paid assets. It is a static site (TypeScript, Canvas,
 | Gap in the decks | Default in the game |
 |---|---|
 | What is "tall"? | Taller than 3.5 m triggers a raise. The closed bridge clears 4.0 m. |
-| Count never reaches 0 | Stop admitting vehicles after 45 s if others wait; resynchronise the count when the span is verified empty. |
+| Count never reaches 0 | Stop admitting vehicles after 45 s if others wait; resynchronise the count once the bridge zone (stop line to departure sensor) is verified empty. |
 | Vehicle stops on the bridge | Alarm and tow after 20 s. |
 | Polling clock | 1 s polling, with emergency arrivals handled as interrupts. |
 | Pedestrians on the span | Verify the span is clear before moving; siren on for 10 s first. |
-| Arbitration among vehicle directions | Vessels first, then longest wait. |
+| Arbitration among vehicle directions | Vessels first, then longest wait. After a max-hold cut, everyone who was waiting gets a turn before the cut mode can win again. |
+| Resuming automatic control after manual play | Stop all gates and signals, lower the bridge with the siren rules if it is up, verify the zone is clear, then resync the counts. |
 
 ## Code map
 

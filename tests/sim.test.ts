@@ -18,18 +18,18 @@ describe('vehicles only (level 1)', () => {
     expect(g.world.tab.volume.WB).toBeGreaterThan(10);
   });
 
-  it('follows the EB sequence diagram order', () => {
-    const g = new Game(level('l1'), cloneSpecs(DEFAULT_SPECS), 3, true);
+  it('follows the EB vehicle sequence diagram, in order', () => {
+    const lv = { ...level('l1'), rates: { ...level('l1').rates, WB: 0 } };
+    const g = new Game(lv, cloneSpecs(DEFAULT_SPECS), 3, true);
     g.run(120);
-    const labels = g.world.msgs
-      .filter((m) => /EB vehicle|vehicle monitor|vehicle flow control/.test(m.from + m.to))
-      .map((m) => m.label);
-    const idx = (s: string) => labels.findIndex((l) => l.startsWith(s));
-    const arrive = idx('arrive()');
-    expect(arrive).toBeGreaterThanOrEqual(0);
-    expect(labels.some((l) => l === 'stop/go(go)')).toBe(true);
-    expect(labels.some((l) => l === 'depart()')).toBe(true);
-    expect(labels.some((l) => l === 'stop/go(stop)')).toBe(true);
+    const labels = g.world.msgs.map((m) => m.label);
+    // Software Specs slide 9: arrive, get/set bridge status, get time, stop/go, increment,
+    // depart, decrement, get time, stop/go, set bridge status
+    const expected = ['arrive()', 'get bridge status()', 'set bridge status(east)', 'get time() (start)', 'stop/go(go)',
+      'increment # EB vehicles', 'depart()', 'decrement # EB vehicles', 'get time() (stop)', 'stop/go(stop)', 'set bridge status(idle)'];
+    let i = 0;
+    for (const l of labels) if (i < expected.length && l === expected[i]) i++;
+    expect(expected.slice(i)).toEqual([]);
   });
 
   it('count never goes negative and returns to the queue length', () => {
@@ -116,5 +116,81 @@ describe('DOT reports', () => {
     const { buildReport } = await import('../src/sim/reports');
     const g = play('l5');
     expect(buildReport(g).quality.sensorMisses).toBeGreaterThan(0);
+  });
+});
+
+describe('regressions found in review', () => {
+  const heavyBoats = () => ({ ...level('l2'), rates: { ...level('l2').rates, NB: 0.05, SB: 0.05 }, tallFraction: 1 });
+
+  it('a vessel max-hold cut hands the next turn to waiting cars (no vessel-first starvation)', () => {
+    const lv = heavyBoats();
+    const g = new Game(lv, { ...cloneSpecs(DEFAULT_SPECS), arbitration: 'vessel-first', maxHoldVesselS: 30 }, 3, true);
+    g.run(lv.duration);
+    const v = g.world.tab.volume;
+    expect(v.EB).toBeGreaterThan(20);
+    expect(v.WB).toBeGreaterThan(20);
+    expect(g.world.waitStats('veh').max).toBeLessThan(200);
+  });
+
+  it('forced ends never put opposing vehicles on the bridge (gate-to-span blind zone)', () => {
+    let headOn = 0;
+    for (const id of ['l1', 'l4', 'l5']) for (let seed = 1; seed <= 15; seed++) {
+      headOn += play(id, { maxHoldVehS: 10 }, seed).world.violations.filter((x) => x.kind === 'head_on').length;
+    }
+    expect(headOn).toBe(0);
+  });
+
+  it('returning to Automatic after a manual change mid-raise recovers', () => {
+    const lv = { ...level('l2'), duration: 3000 };
+    const g = new Game(lv, cloneSpecs(DEFAULT_SPECS), 7, true);
+    let guard = 0;
+    while (!(g.controller.phase === 'raising' && g.world.bridge.p > 0.4) && guard++ < 50000) g.step();
+    expect(g.controller.phase).toBe('raising');
+    g.setAuto(false);
+    g.world.lower();
+    g.run(30);
+    g.setAuto(true);
+    g.run(600);
+    // before the fix it sat in 'raising' forever with the bridge down
+    const stuck = g.controller.phase === 'raising' && g.world.bridge.p === 0 && g.world.bridge.dir === 0;
+    expect(stuck).toBe(false);
+    expect(g.world.waitStats('veh').max).toBeLessThan(200);
+    expect(g.world.veh.EB.waitQ.length + g.world.veh.WB.waitQ.length).toBeLessThan(10);
+  });
+
+  it('wait metrics include vehicles that are still waiting', () => {
+    const lv = { ...level('l1'), manualDefault: true };
+    const g = new Game(lv, cloneSpecs(DEFAULT_SPECS), 2, false); // manual, gates never opened
+    g.run(120);
+    const s = summarize(g);
+    expect(g.world.tab.waitN.veh).toBe(0);
+    expect(s.avgVehWait).toBeGreaterThan(20);
+    expect(s.maxWait).toBeGreaterThan(60);
+  });
+
+  it('reversing the bridge mid-movement is checked against the siren rule', () => {
+    const g = new Game({ ...level('l1'), rates: { ...level('l1').rates, EB: 0, WB: 0 } }, cloneSpecs(DEFAULT_SPECS), 1, false);
+    g.world.setSiren('on');
+    g.run(11);
+    g.world.raise();
+    g.run(3);
+    g.world.setSiren('off');
+    g.world.lower();
+    expect(g.world.violations.map((v) => v.kind)).toEqual(['siren_rule']);
+  });
+
+  it('a vehicle that drives into the open span is cleared from the count', () => {
+    const lv = { ...level('l1'), rates: { ...level('l1').rates, WB: 0, EB: 0.3 } };
+    const g = new Game(lv, cloneSpecs(DEFAULT_SPECS), 4, false);
+    g.world.setSiren('on');
+    g.run(11);
+    g.world.raise();
+    g.run(15);
+    g.world.setGate('EB', 'go');
+    g.run(10);
+    const w = g.world;
+    expect(w.violations.some((v) => v.kind === 'vehicle_into_open_span')).toBe(true);
+    const onRoad = w.vehicles.filter((v) => v.dir === 'EB' && v.counted && v.s < 270).length;
+    expect(w.veh.EB.count).toBe(onRoad);
   });
 });

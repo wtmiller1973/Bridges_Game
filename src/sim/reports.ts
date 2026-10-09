@@ -27,7 +27,7 @@ export interface DotReport {
   };
   byHour: HourRow[];
   util: { ebOpenPct: number; wbOpenPct: number; raisedPct: number; raiseCycles: number; raisedMin: number };
-  quality: { sensorMisses: number; stalls: number; towed: number; violations: number; turnedAway: number };
+  quality: { sensorMisses: number; stalls: number; towed: number; violations: number; turnedAway: number; carsWaiting: number; vesselsWaiting: number; longestCurrentWait: number };
   projection: { daily: number; weekly: number; monthly: number; boatsDaily: number; boatsWeekly: number; boatsMonthly: number } | null;
 }
 
@@ -77,7 +77,11 @@ export function buildReport(g: Game): DotReport {
       ebOpenPct: (tab.ebGoS / el) * 100, wbOpenPct: (tab.wbGoS / el) * 100, raisedPct: (tab.bridgeUpS / el) * 100,
       raiseCycles: tab.raiseCycles, raisedMin: tab.bridgeUpS / 60,
     },
-    quality: { sensorMisses: tab.sensorMisses, stalls: tab.stalls, towed: tab.towed, violations: w.violations.length, turnedAway: tab.turnedAway },
+    quality: {
+      sensorMisses: tab.sensorMisses, stalls: tab.stalls, towed: tab.towed, violations: w.violations.length, turnedAway: tab.turnedAway,
+      carsWaiting: w.waitStats('veh').pending + w.waitStats('emer').pending, vesselsWaiting: w.waitStats('vessel').pending,
+      longestCurrentWait: Math.max(w.waitStats('veh').max, w.waitStats('emer').max, w.waitStats('vessel').max),
+    },
     projection: periodDays >= 0.5
       ? { daily: cars / periodDays, weekly: (7 * cars) / periodDays, monthly: (30 * cars) / periodDays, boatsDaily: boats / periodDays, boatsWeekly: (7 * boats) / periodDays, boatsMonthly: (30 * boats) / periodDays }
       : null,

@@ -16,6 +16,7 @@ export class Game {
     this.controller.enabled = auto;
   }
   setAuto(on: boolean) {
+    if (on && !this.auto) this.controller.resume();
     this.auto = on;
     this.controller.enabled = on;
   }
@@ -46,11 +47,14 @@ export interface Summary {
 }
 
 export function summarize(g: Game): Summary {
-  const t = g.world.tab;
-  const safety = g.world.violations.length;
+  const w = g.world, t = w.tab;
+  const safety = w.violations.length;
   const throughput = t.volume.EB + t.volume.WB + t.volume.EBE + t.volume.WBE + t.volume.NB + t.volume.SB;
-  const avgVehWait = t.avgWait('veh'), avgVesselWait = t.avgWait('vessel'), avgEmerWait = t.avgWait('emer');
-  const score = Math.max(0, Math.round(1000 - 200 * safety - 2 * avgVehWait - 1.5 * avgVesselWait - 6 * avgEmerWait - 0.5 * t.waitMax - 2 * t.turnedAway));
+  // Waits include anyone still waiting, so a starved queue lowers the score.
+  const veh = w.waitStats('veh'), ves = w.waitStats('vessel'), emer = w.waitStats('emer'), ped = w.waitStats('ped');
+  const avgVehWait = veh.avg, avgVesselWait = ves.avg, avgEmerWait = emer.avg;
+  const maxWait = Math.max(t.waitMax, veh.max, ves.max, emer.max, ped.max);
+  const score = Math.max(0, Math.round(1000 - 200 * safety - 2 * avgVehWait - 1.5 * avgVesselWait - 6 * avgEmerWait - 0.5 * maxWait - 2 * t.turnedAway));
   const grade = score >= 850 ? 'A' : score >= 700 ? 'B' : score >= 550 ? 'C' : score >= 400 ? 'D' : 'F';
-  return { safety, avgVehWait, avgVesselWait, avgEmerWait, maxWait: t.waitMax, throughput, score, grade };
+  return { safety, avgVehWait, avgVesselWait, avgEmerWait, maxWait, throughput, score, grade };
 }

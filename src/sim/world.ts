@@ -147,11 +147,40 @@ export class World {
     if (kind === 'vessel') return 0.2 + 1.8 * g(13, 3.5);
     return 0.2 + 1.2 * g(12.5, 4);
   }
-  vehicleLen(v: Vehicle) { return v.len; }
-
   // ---------- sensors read by the controller ----------
   spanVehicles(dir?: Dir): number {
     return this.vehicles.filter((v) => (!dir || v.dir === dir) && v.s > GEO.spanA && v.s - v.len < GEO.spanB).length;
+  }
+  /**
+   * Occupancy of the whole bridge zone, from the stop line to the departure sensor. Checking the
+   * span alone misses a car that has just passed the gate but not yet reached the deck.
+   */
+  zoneVehicles(dir?: Dir): number {
+    return this.vehicles.filter((v) => (!dir || v.dir === dir) && v.s >= GEO.gateS && v.s < GEO.departS).length;
+  }
+  /** Waits including vehicles, vessels and pedestrians still waiting, so starvation shows up. */
+  waitStats(kind: 'veh' | 'vessel' | 'emer' | 'ped'): { avg: number; max: number; pending: number } {
+    const pend: number[] = [];
+    if (kind === 'veh' || kind === 'emer') {
+      for (const v of this.vehicles) if (v.counted && !v.entered && v.emergency === (kind === 'emer')) pend.push(this.t - v.arrivedT);
+    } else if (kind === 'vessel') {
+      for (const v of this.vessels) if (v.counted && v.passedT < 0) pend.push(this.t - v.arrivedT);
+    } else {
+      for (const p of this.peds) if (!p.crossing) pend.push(p.waitedS);
+    }
+    const n = this.tab.waitN[kind] + pend.length;
+    const sum = this.tab.waitSum[kind] + pend.reduce((a, b) => a + b, 0);
+    return { avg: n ? sum / n : 0, max: Math.max(0, ...pend), pending: pend.length };
+  }
+  /** Removes vehicles that left the road abnormally (crash, fall) and clears them from the counts. */
+  private removeVehicles(list: Vehicle[]) {
+    if (!list.length) return;
+    for (const v of list) {
+      if (v.counted && !v.missDeparture) this.veh[v.dir].count = Math.max(0, this.veh[v.dir].count - 1);
+      if (v.counted && !v.entered) this.veh[v.dir].waitQ.shift();
+    }
+    this.vehicles = this.vehicles.filter((v) => !list.includes(v));
+    this.emit('virtual bridge operator', 'DOT', `incident: ${list.length} vehicle(s) removed`);
   }
   spanPeds(): number {
     return this.peds.filter((p) => p.x > GEO.spanA && p.x < GEO.spanB).length;
@@ -202,7 +231,7 @@ export class World {
   lower() { this.startMove(-1); }
   private startMove(d: 1 | -1) {
     if ((d === 1 && (this.bridge.p >= 1 || this.bridge.dir === 1)) || (d === -1 && (this.bridge.p <= 0 || this.bridge.dir === -1))) return;
-    if (this.bridge.dir !== 0) { this.bridge.dir = d; return; }
+    // A start, or a reversal mid-movement, is a bridge movement: the same rules apply.
     const lead = this.t - this.sirenSince;
     if (this.siren !== 'on' || lead < RULE_SIREN_LEAD - 0.05) {
       this.violate('siren_rule', `Bridge started moving with siren "${this.siren}" for only ${lead.toFixed(0)} s (rule: "on" for ${RULE_SIREN_LEAD} s)`);
@@ -211,7 +240,7 @@ export class World {
     const onSpanP = this.peds.filter((p) => p.x > GEO.spanA && p.x < GEO.spanB);
     if (onSpanV.length || onSpanP.length) {
       this.violate('moved_with_traffic', `${onSpanP.length} pedestrian(s) and ${onSpanV.length} vehicle(s) on the span when it moved`);
-      this.vehicles = this.vehicles.filter((v) => !onSpanV.includes(v));
+      this.removeVehicles(onSpanV);
       this.peds = this.peds.filter((p) => !onSpanP.includes(p));
     }
     this.bridge.dir = d;
@@ -301,6 +330,7 @@ export class World {
       const vmax = this.specs.vehicleSpeed;
       const mid = (GEO.spanA + GEO.spanB) / 2;
       const gone: Vehicle[] = [];
+      const crashed: Vehicle[] = [];
       list.forEach((veh, i) => {
         const lead = list[i - 1];
         const prev = veh.s;
@@ -322,7 +352,7 @@ export class World {
         }
         if (prev < GEO.spanA && ns >= GEO.spanA && this.bridge.p > 0.001) {
           this.violate('vehicle_into_open_span', `${dir} vehicle drove into the open span (bridge ${this.bridgePosition()})`);
-          gone.push(veh);
+          crashed.push(veh);
           return;
         }
         veh.s = ns;
@@ -336,6 +366,8 @@ export class World {
           if (veh.emergency) this.tab.hourlyEmer[Math.floor(this.hourOfDay())]++;
           this.flash[dir + 'arr'] = this.t;
           this.emit(`${dir} vehicle`, 'vehicle monitor', 'arrive()');
+          this.emit('vehicle monitor', 'vehicle monitor', `increment # ${dir} vehicles`);
+          this.emit('vehicle monitor', 'passage data tabulator', `calculate # ${dir} vehicles`);
         }
         if (!veh.entered && prev < GEO.gateS && ns >= GEO.gateS && veh.counted) {
           veh.entered = true; veh.enteredT = this.t;
@@ -351,6 +383,7 @@ export class World {
             this.tab.vehPassages.push({ id: veh.id, dir, emergency: veh.emergency, arrivedT: veh.arrivedT, enteredT: veh.enteredT, departedT: this.t, arrHour: this.hourAt(veh.arrivedT) });
             this.flash[dir + 'dep'] = this.t;
             this.emit(`${dir} vehicle`, 'vehicle monitor', 'depart()');
+            this.emit('vehicle monitor', 'vehicle monitor', `decrement # ${dir} vehicles`);
           } else {
             this.tab.sensorMisses++;
             this.flash[dir + 'miss'] = this.t;
@@ -360,6 +393,7 @@ export class World {
         if (ns >= GEO.endS) gone.push(veh);
       });
       if (gone.length) this.vehicles = this.vehicles.filter((v) => !gone.includes(v));
+      this.removeVehicles(crashed);
     }
   }
 

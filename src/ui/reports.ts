@@ -48,7 +48,7 @@ const row = (name: string, s: Stat) => s.n
 function times(r: DotReport): string {
   const t = r.times;
   return `<div class="card"><h3>Time to traverse the bridge (seconds)</h3>
-    <div class="small muted">Total = arrival sensor to departure sensor, so it includes waiting for the bridge. Span = from the barrier or signal to the departure sensor.</div>
+    <div class="small muted">Total = arrival sensor to departure sensor, so it includes waiting for the bridge. Span = from the barrier or signal to the departure sensor. Only completed passages are listed; anyone still waiting appears under Data quality.</div>
     <table><tr><th>Passage</th><th class="n">n</th><th class="n">min</th><th class="n">median</th><th class="n">mean</th><th class="n">90th</th><th class="n">max</th></tr>
     ${row('Cars, all: total', t.carTotal)}${row('Cars, east bound: total', t.carEB)}${row('Cars, west bound: total', t.carWB)}
     ${row('Cars: wait for the bridge', t.carWait)}${row('Cars: on the span', t.carSpan)}${row('Emergency vehicles: total', t.emergency)}
@@ -83,7 +83,9 @@ function quality(r: DotReport): string {
     <tr><td>Vehicles stalled on the span</td><td class="n">${q.stalls}</td></tr>
     <tr><td>Tows dispatched</td><td class="n">${q.towed}</td></tr>
     <tr><td>Safety violations (citation candidates and liability)</td><td class="n ${q.violations ? 'bad' : 'good'}">${q.violations}</td></tr>
-    <tr><td>Cars turned away (queue full)</td><td class="n">${q.turnedAway}</td></tr></table>
+    <tr><td>Cars turned away (queue full)</td><td class="n">${q.turnedAway}</td></tr>
+    <tr><td>Still waiting at report time: cars / tall vessels</td><td class="n">${q.carsWaiting} / ${q.vesselsWaiting}</td></tr>
+    <tr><td>Longest current wait</td><td class="n ${q.longestCurrentWait > 120 ? 'bad' : ''}">${f1(q.longestCurrentWait)} s</td></tr></table>
     <div class="small muted">Sensor accuracy drives controller behaviour (information risk). Missed departures also mean the passage counts above are slightly low.</div></div>`;
 }
 

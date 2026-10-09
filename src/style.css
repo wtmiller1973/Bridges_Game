@@ -24,6 +24,7 @@ canvas { width: 100%; height: auto; display: block; border-radius: 8px; backgrou
 #timeline { margin-top: 8px; }
 .hud { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 8px 2px; font-size: 13px; color: var(--muted); }
 .hud b { color: var(--ink); }
+.specwarn { background: var(--warn); color: #fff; border-color: var(--warn); padding: 2px 10px; font-size: 13px; }
 .tabs { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
 .tabs button { border-radius: 8px; } .tabs button.on { background: var(--accent); color: #fff; }
 .tabbody { max-height: 78vh; overflow: auto; padding-right: 4px; }

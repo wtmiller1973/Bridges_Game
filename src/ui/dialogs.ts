@@ -17,8 +17,13 @@ export function openDialog(html: string, onClose?: () => void) {
 }
 export function closeDialog() { if (dlg().open) dlg().close(); }
 
-export function briefing(l: Level, onStart: () => void) {
-  openDialog(`<h2>${l.title}</h2><p>${l.brief}</p>
+export function briefing(l: Level, specs: Specs, onStart: () => void) {
+  const changed = changedSpecs(specs);
+  const notice = changed.length
+    ? `<div class="card"><b class="warn">${changed.length} spec${changed.length > 1 ? 's are' : ' is'} changed from the defaults</b> (saved from earlier play): ${changed.map((k) => SPEC_DEFS.find((d) => d.key === k)!.label).join(', ')}.
+       <div class="actions"><button data-reset-specs>Reset specs to defaults</button></div></div>`
+    : '';
+  openDialog(`<h2>${l.title}</h2><p>${l.brief}</p>${notice}
     <h3>You will learn</h3><ul>${l.goals.map((g) => `<li>${g}</li>`).join('')}</ul>
     <h3>Try this</h3><ul>${l.tryThis.map((g) => `<li>${g}</li>`).join('')}</ul>
     <div class="actions"><button class="primary" data-close>Start</button></div>`, onStart);

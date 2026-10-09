@@ -54,7 +54,7 @@ function load(i: number, auto?: boolean) {
   running = false; $('playBtn').textContent = 'Resume';
   lastHtml = {};
   render(true);
-  briefing(lv, () => { running = true; $('playBtn').textContent = 'Pause'; });
+  briefing(lv, specs, () => { running = true; $('playBtn').textContent = 'Pause'; });
 }
 
 // ---- tabs ----
@@ -106,7 +106,18 @@ $('shareBtn').addEventListener('click', async (e) => {
   try { await navigator.clipboard.writeText(url); (e.target as HTMLElement).textContent = 'Copied!'; setTimeout(() => ((e.target as HTMLElement).textContent = 'Copy share link'), 1500); }
   catch { openDialog(`<h2>Share link</h2><p>Copy this link:</p><textarea style="width:100%" rows="4" readonly>${url}</textarea><div class="actions"><button data-close class="primary">Close</button></div>`); }
 });
-$('dlg').addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-close]')) closeDialog(); });
+$('dlg').addEventListener('click', (e) => {
+  const el = e.target as HTMLElement;
+  if (el.closest('[data-close]')) closeDialog();
+  const reset = el.closest('[data-reset-specs]');
+  if (reset) {
+    Object.assign(specs, DEFAULT_SPECS); saveSpecs(); refreshSpecs();
+    reset.closest('.card')!.innerHTML = '<b class="good">Specs reset to defaults.</b>';
+  }
+});
+$('hud').addEventListener('click', (e) => {
+  if ((e.target as HTMLElement).closest('[data-goto-specs]')) document.querySelector<HTMLButtonElement>('.tabs button[data-tab="specs"]')!.click();
+});
 window.addEventListener('keydown', (e) => { if (e.code === 'Space' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement || e.target instanceof HTMLSelectElement)) { e.preventDefault(); $('playBtn').click(); } });
 
 // ---- render ----

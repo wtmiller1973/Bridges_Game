@@ -1,7 +1,7 @@
 import type { Dir, World } from './world';
 
 type Phase =
-  | 'idle' | 'vehServe' | 'vehEnd'
+  | 'idle' | 'resync' | 'vehServe' | 'vehEnd'
   | 'nsClear' | 'nsWarn' | 'raising' | 'vesselServe' | 'vesselEnd' | 'warnDown' | 'lowering';
 
 /**
@@ -21,6 +21,11 @@ export class BridgeController {
   private modeStart = 0;
   private dir: Dir = 'EB';
   private towOrdered = false;
+  /**
+   * Turns owed after a max-hold cut: every mode that was waiting when the bridge was taken
+   * away from the cut mode gets a turn before the cut mode may win again.
+   */
+  private owed = new Set<Dir | 'NS'>();
 
   constructor(private w: World) {}
 
@@ -33,6 +38,26 @@ export class BridgeController {
       this.pollAcc = 0;
       w.emergencyFlag = false;
       this.think();
+    }
+  }
+
+  /**
+   * Called when automatic control resumes after Manual mode. The player may have left the
+   * bridge or devices in any state, so first bring everything back to a known safe state.
+   */
+  resume() {
+    const w = this.w;
+    this.pollAcc = 0;
+    this.towOrdered = false;
+    this.owed.clear();
+    w.setGate('EB', 'stop'); w.setGate('WB', 'stop');
+    w.setLight('NB', 'stop'); w.setLight('SB', 'stop');
+    if (w.bridge.p > 0 || w.bridge.dir !== 0) {
+      w.setStatus('ns'); w.setCitizen('stop');
+      this.go('vesselEnd', 'Resuming automatic control: the bridge is not down. Clear the channel, then lower it.', 'Manage Bridge');
+    } else {
+      w.setSiren('off');
+      this.go('resync', 'Resuming automatic control: gates stopped, verifying the bridge zone is clear.', 'Manage Bridge');
     }
   }
 
@@ -76,6 +101,15 @@ export class BridgeController {
 
     switch (this.phase) {
       case 'idle': return this.arbitrate();
+      case 'resync': {
+        const clear = sp.occupancySensors ? w.zoneVehicles() === 0 : t - this.phaseT >= sp.clearDelayS;
+        if (!clear) return;
+        if (sp.occupancySensors) for (const d of ['EB', 'WB'] as Dir[]) this.resyncCount(d);
+        w.setCitizen('go');
+        w.setStatus('idle');
+        this.go('idle', 'Bridge zone clear. Status set to idle.', 'Manage Bridge');
+        return;
+      }
       case 'vehServe': {
         const m = w.veh[this.dir];
         if (m.count === 0) return this.endVehicles(true);
@@ -89,28 +123,23 @@ export class BridgeController {
         return;
       }
       case 'vehEnd': {
-        const clear = sp.occupancySensors ? w.spanVehicles() === 0 : t - this.phaseT >= sp.clearDelayS;
+        const clear = sp.occupancySensors ? w.zoneVehicles() === 0 : t - this.phaseT >= sp.clearDelayS;
         if (w.veh[this.dir].count === 0 || clear) {
-          if (sp.occupancySensors) {
-            const m = w.veh[this.dir];
-            if (m.count !== m.waitQ.length) {
-              w.emit('vehicle monitor', 'vehicle monitor', `resync count ${m.count} -> ${m.waitQ.length}`);
-              m.count = m.waitQ.length;
-            }
-          }
+          if (sp.occupancySensors) this.resyncCount(this.dir);
+          this.owe(this.dir);
           this.endVehicles(false);
         }
         return;
       }
       case 'nsClear': {
-        const clear = (sp.occupancySensors ? w.spanVehicles() === 0 : t - this.phaseT >= sp.clearDelayS)
+        const clear = (sp.occupancySensors ? w.zoneVehicles() === 0 : t - this.phaseT >= sp.clearDelayS)
           && (!sp.pedestrianCheck || w.spanPeds() === 0);
         if (clear) { w.setSiren('on'); this.go('nsWarn', `Siren on. Waiting ${sp.sirenLeadS} s before the bridge moves.`); }
         return;
       }
       case 'nsWarn': {
         if (t - this.phaseT < sp.sirenLeadS) return;
-        const ok = (!sp.pedestrianCheck || w.spanPeds() === 0) && (!sp.occupancySensors || w.spanVehicles() === 0);
+        const ok = (!sp.pedestrianCheck || w.spanPeds() === 0) && (!sp.occupancySensors || w.zoneVehicles() === 0);
         if (!ok) { this.step = 'Waiting: someone is still on the span.'; return; }
         w.emit('bridge control', 'bridge', 'bridge up');
         w.raise();
@@ -130,6 +159,7 @@ export class BridgeController {
         const held = t - this.modeStart;
         const forced = (held > sp.maxHoldVesselS && this.otherDemand()) || this.emergencyAgainst();
         if (tall === 0 || forced) {
+          if (tall > 0) this.owe('NS');
           w.setLight('NB', 'stop'); w.setLight('SB', 'stop');
           this.go('vesselEnd', tall === 0
             ? 'n/s vessel count = 0. Movement signals stop. Clearing the channel.'
@@ -161,9 +191,11 @@ export class BridgeController {
 
   private endVehicles(normal: boolean) {
     const w = this.w;
-    w.setGate(this.dir, 'stop');
-    w.setStatus('idle');
     w.emit('vehicle monitor', 'real time clock', 'get time() (stop)');
+    w.emit('real time clock', 'passage data tabulator', 'set stop time()');
+    w.setGate(this.dir, 'stop');
+    w.emit('passage data tabulator', 'passage data tabulator', `calculate ${this.dir} duration`);
+    w.setStatus('idle');
     this.go('idle', normal
       ? `${this.dir === 'EB' ? 'East' : 'West'} bound vehicle count = 0. Barrier stop. Status set to idle.`
       : 'Span clear. Status set to idle.', 'Manage Bridge');
@@ -177,8 +209,26 @@ export class BridgeController {
     w.emit('vehicle monitor', 'bridge control', 'get bridge status()');
     w.setStatus(name);
     w.emit('vehicle monitor', 'real time clock', 'get time() (start)');
+    w.emit('real time clock', 'passage data tabulator', 'set start time()');
     w.setGate(dir, 'go');
     this.go('vehServe', `Set ${name} bound movement barrier to go.`, `Control ${dir === 'EB' ? 'East' : 'West'} Bound Vehicles`);
+  }
+
+  /** Records who was waiting when `mode` was cut off by its max hold. */
+  private owe(mode: Dir | 'NS') {
+    const w = this.w;
+    this.owed.clear();
+    if (mode !== 'EB' && w.veh.EB.waitQ.length) this.owed.add('EB');
+    if (mode !== 'WB' && w.veh.WB.waitQ.length) this.owed.add('WB');
+    if (mode !== 'NS' && w.vsl.NB.count + w.vsl.SB.count > 0) this.owed.add('NS');
+  }
+
+  /** With the zone verified empty, every counted vehicle must still be waiting. */
+  private resyncCount(d: Dir) {
+    const m = this.w.veh[d];
+    if (m.count === m.waitQ.length) return;
+    this.w.emit('vehicle monitor', 'vehicle monitor', `resync ${d} count ${m.count} -> ${m.waitQ.length}`);
+    m.count = m.waitQ.length;
   }
 
   private startNS() {
@@ -199,6 +249,7 @@ export class BridgeController {
       const e = w.veh.EB.emerWaiting > 0, ww = w.veh.WB.emerWaiting > 0;
       if (e || ww) {
         const pick: Dir = e && ww ? (eq[0] <= wq[0] ? 'EB' : 'WB') : e ? 'EB' : 'WB';
+        this.owed.delete(pick);
         this.step = `Emergency vehicle arrival (${pick}). Moving ${pick} first.`;
         return this.startVehicles(pick);
       }
@@ -208,12 +259,17 @@ export class BridgeController {
     if (wq.length) opts.push({ k: 'WB', wait: w.t - wq[0], q: wq.length });
     if (tall) opts.push({ k: 'NS', wait: Number.isFinite(tallWait) ? w.t - tallWait : 0, q: tall });
     if (!opts.length) return;
+    // Fairness: after a max-hold cut, only modes that are owed a turn (and still waiting) compete.
+    const owedNow = opts.filter((o) => this.owed.has(o.k));
+    if (owedNow.length) opts.splice(0, opts.length, ...owedNow);
+    else this.owed.clear();
     let pick = opts[0];
     for (const o of opts) {
       if (sp.arbitration === 'vessel-first' && o.k === 'NS') { pick = o; break; }
       const better = sp.arbitration === 'longest-queue' ? o.q > pick.q : o.wait > pick.wait;
       if (better) pick = o;
     }
+    this.owed.delete(pick.k);
     if (pick.k === 'NS') this.startNS(); else this.startVehicles(pick.k);
   }
 }

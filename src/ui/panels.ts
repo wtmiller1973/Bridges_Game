@@ -1,6 +1,7 @@
 import type { Game } from '../sim/game';
 import { summarize } from '../sim/game';
-import { RULE_SIREN_LEAD, VIOLATION_INFO } from '../sim/world';
+import { changedSpecs } from '../sim/specs';
+import { RULE_SIREN_LEAD, VIOLATION_INFO, type Status, type World } from '../sim/world';
 
 const f1 = (n: number) => n.toFixed(1);
 const clock = (g: Game) => {
@@ -16,16 +17,34 @@ export function hudHtml(g: Game): string {
   <span>Safety violations <b class="${s.safety ? 'bad' : 'good'}">${s.safety}</b></span>
   <span>Avg car wait <b>${f1(s.avgVehWait)} s</b></span>
   <span>Avg vessel wait <b>${f1(s.avgVesselWait)} s</b></span>
-  <span>Score <b>${s.score}</b></span>`;
+  <span>Score <b>${s.score}</b></span>${specBanner(g)}`;
+}
+
+/** Reminds students their Spec Lab changes are still in effect (they persist across levels). */
+function specBanner(g: Game): string {
+  const n = changedSpecs(g.specs).length;
+  return n ? `<button class="specwarn" data-goto-specs>${n} spec${n > 1 ? 's' : ''} changed from default: open Spec Lab</button>` : '';
+}
+
+/** In Manual mode the controller is off, so read the status from the devices themselves. */
+function derivedStatus(w: World): Status | 'conflict' {
+  if (w.bridge.p > 0 || w.bridge.dir !== 0) return 'ns';
+  if (w.gates.EB === 'go' && w.gates.WB === 'go') return 'conflict';
+  if (w.gates.EB === 'go') return 'east';
+  if (w.gates.WB === 'go') return 'west';
+  return 'idle';
 }
 
 const chip = (label: string, on: boolean) => `<span class="chip ${on ? 'on' : ''}">${label}</span>`;
 
 export function operatorHtml(g: Game): string {
-  const w = g.world, c = g.controller, st = w.bridge.status;
+  const w = g.world, c = g.controller;
+  const st = g.auto ? w.bridge.status : derivedStatus(w);
   const alarm = w.alarm ? `<div class="alarm">ALARM: stalled vehicle on the span. Tow dispatched.</div>` : '';
   let h = `<div class="card"><h3>Bridge status</h3>
     <div class="chips">${chip('IDLE', st === 'idle')}${chip('EAST', st === 'east')}${chip('WEST', st === 'west')}${chip('NORTH / SOUTH', st === 'ns')}</div>
+    ${st === 'conflict' ? '<div class="alarm">Both vehicle gates are open on a one-lane bridge!</div>' : ''}
+    ${g.auto ? '' : '<div class="small muted">Manual mode: status is read from the gates and bridge position.</div>'}
     <div class="small muted">Position: <b>${w.bridgePosition()}</b> · Siren: <b>${w.siren}</b> · Citizen signal: <b>${w.citizen}</b></div>
     <div class="small muted">Gates: EB <b>${w.gates.EB}</b>, WB <b>${w.gates.WB}</b> · Vessel lights: NB <b>${w.lights.NB}</b>, SB <b>${w.lights.SB}</b></div></div>${alarm}`;
   h += `<div class="card"><h3>Sensor counts (what the controller knows)</h3>
