@@ -1,7 +1,3 @@
 node_modules
 dist
 *.log
-
-# Reference photos are private: never commit or deploy them
-reference/
-**/reference/
