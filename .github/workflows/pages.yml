@@ -26,6 +26,11 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Add Goldie's Halloween Adventure (static, no build; never the reference photos)
+        run: |
+          mkdir -p dist/halloween
+          cp -r halloween/index.html halloween/manifest.webmanifest halloween/sw.js \
+                halloween/css halloween/js halloween/assets dist/halloween/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
