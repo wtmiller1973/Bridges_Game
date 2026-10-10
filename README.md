@@ -1,5 +1,7 @@
 # The Bridges
 
+> This repository also holds **Goldie's Halloween Adventure**, a set of phone mini-games for a young child. See [halloween/README.md](halloween/README.md). It deploys to `/halloween/` on the same GitHub Pages site.
+
 A free, browser-based teaching game built from the CIS610 *The Bridges* case (Business Requirements v2.0 and Software Specifications v03). Students run an automated one-lane drawbridge: east and west bound cars, emergency vehicles, tall north and south bound vessels, pedestrians, and the DOT data the state wants.
 
 No server, no accounts, no paid assets. It is a static site (TypeScript, Canvas, Vite) that deploys to GitHub Pages.
